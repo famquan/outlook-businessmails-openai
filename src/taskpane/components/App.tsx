@@ -2,7 +2,8 @@
 import * as React from "react";
 import { DefaultButton } from "@fluentui/react";
 import Progress from "./Progress";
-import { ChatCompletionRequestMessage, Configuration, OpenAIApi } from "openai";
+import OpenAI from "openai";
+import { ChatCompletionMessageParam } from "openai/resources";
 
 /* global require */
 
@@ -66,23 +67,39 @@ export default class App extends React.Component<AppProps, AppState> {
   generateText = async () => {
     // eslint-disable-next-line no-undef
     var current = this;
-    const configuration = new Configuration({
-      apiKey: "your-api-key",
+    const openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
     });
-    const openai = new OpenAIApi(configuration);
+
     current.setState({ isLoading: true });
-    const response = await openai.createChatCompletion({
-      model: "gpt-3.5-turbo",
-      messages: [
-        {
-          role: "system",
-          content: "You are a helpful assistant that can help users to create professional business content.",
-        },
-        { role: "user", content: "Turn the following text into a professional business mail: " + this.state.startText },
-      ],
+    const messages: ChatCompletionMessageParam[] = [
+      {
+        role: "system",
+        content: [
+          {
+            type: "text",
+            text: `
+              You are a helpful assistant that can help users to create professional business content. 
+            `,
+          },
+        ],
+      },
+      {
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text: "Turn the following text into a professional business mail: " + this.state.startText,
+          },
+        ],
+      },
+    ];
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: messages,
     });
     current.setState({ isLoading: false });
-    current.setState({ generatedText: response.data.choices[0].message.content });
+    current.setState({ generatedText: response.choices[0].message["content"] });
   };
 
   insertIntoMail = () => {
@@ -106,33 +123,43 @@ export default class App extends React.Component<AppProps, AppState> {
     return new Office.Promise(function (resolve, reject) {
       try {
         Office.context.mailbox.item.body.getAsync(Office.CoercionType.Text, async function (asyncResult) {
-          const configuration = new Configuration({
-            apiKey: "your-api-key",
+          const openai = new OpenAI({
+            apiKey: process.env.OPENAI_API_KEY,
           });
-          const openai = new OpenAIApi(configuration);
 
           //take only the first 800 words of the mail
           const mailText = asyncResult.value.split(" ").slice(0, 800).join(" ");
 
           //create the request body
-          const messages: ChatCompletionRequestMessage[] = [
+          const messages: ChatCompletionMessageParam[] = [
             {
               role: "system",
-              content:
-                "You are a helpful assistant that can help users to better manage emails. The mail thread can be made by multiple prompts.",
+              content: [
+                {
+                  type: "text",
+                  text: `
+                    You are a helpful assistant that can help users to better manage emails. The mail thread can be made by multiple prompts. 
+                  `,
+                },
+              ],
             },
             {
               role: "user",
-              content: "Summarize the following mail thread and summarize it with a bullet list: " + mailText,
+              content: [
+                {
+                  type: "text",
+                  text: "Summarize the following mail thread and summarize it with a bullet list: " + mailText,
+                },
+              ],
             },
           ];
 
-          const response = await openai.createChatCompletion({
-            model: "gpt-3.5-turbo",
+          const response = await openai.chat.completions.create({
+            model: "gpt-4o",
             messages: messages,
           });
 
-          resolve(response.data.choices[0].message.content);
+          resolve(response.choices[0].message["content"]);
         });
       } catch (error) {
         reject(error);

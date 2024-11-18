@@ -5,7 +5,7 @@
 
 /* global global, Office, self, window */
 
-import { Configuration, OpenAIApi } from "openai";
+import OpenAI from "openai";
 
 Office.onReady(() => {
   // If needed, Office.js is ready to be called
@@ -26,26 +26,34 @@ function getSelectedText(): Promise<any> {
   return new Office.Promise(function (resolve, reject) {
     try {
       Office.context.mailbox.item.body.getAsync(Office.CoercionType.Text, async function (asyncResult) {
-        const configuration = new Configuration({
-          apiKey: "your-api-key",
+        const openai = new OpenAI({
+          apiKey: process.env.OPENAI_API_KEY,
         });
-        const openai = new OpenAIApi(configuration);
-        const response = await openai.createChatCompletion({
-          model: "gpt-3.5-turbo",
+        const response = await openai.chat.completions.create({
+          model: "gpt-4o",
           messages: [
             {
               role: "system",
-              content:
-                "You are a helpful assistant that can help users to better manage emails. The following prompt contains the whole mail thread. ",
+              content: [
+                {
+                  type: "text",
+                  text: `You are a helpful assistant that can help users to better manage emails. The following prompt contains the whole mail thread.`
+                },
+              ],
             },
             {
               role: "user",
-              content: "Summarize the following mail thread and extract the key points: " + asyncResult.value,
+              content: [
+                {
+                  type: "text",
+                  text: "Summarize the following mail thread and extract the key points: " + asyncResult.value,
+                },
+              ],
             },
           ],
         });
 
-        resolve(response.data.choices[0].message.content);
+        resolve(response.choices[0].message["content"]);
       });
     } catch (error) {
       reject(error);
