@@ -1,9 +1,9 @@
 /* eslint-disable no-undef */
-import * as React from "react";
+/* eslint-disable prettier/prettier */
+import React from "react";
 import { DefaultButton } from "@fluentui/react";
 import Progress from "./Progress";
 import OpenAI from "openai";
-import { ChatCompletionMessageParam } from "openai/resources";
 
 /* global require */
 
@@ -23,38 +23,39 @@ export interface AppState {
 }
 
 export default class App extends React.Component<AppProps, AppState> {
-  constructor(props) {
+  constructor(props: AppProps) {
     super(props);
 
-    let isGenerateBusinessMailActive;
-    let isSummarizeMailActive;
-
-    //get the current URL
     const url = window.location.href;
-    console.log("URL: " + url);
-    //check if the URL contains the parameter "generate"
-    if (url.indexOf("compose") > -1) {
-      console.log("Action: generate business mail");
-      isGenerateBusinessMailActive = true;
-      isSummarizeMailActive = false;
-    }
-    //check if the URL contains the parameter "summarize"
-    if (url.indexOf("summary") > -1) {
-      console.log("Action: summarize mail");
-      isGenerateBusinessMailActive = false;
-      isSummarizeMailActive = true;
-    }
+    const isGenerateBusinessMailActive = url.includes("compose");
+    const isSummarizeMailActive = url.includes("summary");
 
     this.state = {
       generatedText: "",
       startText: "",
       finalMailText: "",
       isLoading: false,
-      isGenerateBusinessMailActive: isGenerateBusinessMailActive,
-      isSummarizeMailActive: isSummarizeMailActive,
+      isGenerateBusinessMailActive,
+      isSummarizeMailActive,
       summary: "",
     };
   }
+
+  // Reusable Progress Section
+  ProgressSection = () => (
+    this.state.isLoading ? <Progress title="Loading..." message="The AI is working..." /> : null
+  );
+
+  // Reusable TextArea Component
+  TextArea = ({ value, onChange, rows, cols }: { value: string; onChange: React.ChangeEventHandler<HTMLTextAreaElement>; rows: number; cols: number }) => (
+    <textarea
+      className="ms-welcome"
+      value={value}
+      onChange={onChange}
+      rows={rows}
+      cols={cols}
+    />
+  );
 
   showGenerateBusinessMail = () => {
     this.setState({ isGenerateBusinessMailActive: true, isSummarizeMailActive: false });
@@ -65,179 +66,134 @@ export default class App extends React.Component<AppProps, AppState> {
   };
 
   generateText = async () => {
-    // eslint-disable-next-line no-undef
-    var current = this;
-    const openai = new OpenAI({
+    this.setState({ isLoading: true });
+    const openai = new OpenAI({ 
       apiKey: process.env.OPENAI_API_KEY,
+      dangerouslyAllowBrowser: true
     });
 
-    current.setState({ isLoading: true });
-    const messages: ChatCompletionMessageParam[] = [
-      {
-        role: "system",
-        content: [
-          {
-            type: "text",
-            text: `
-              You are a helpful assistant that can help users to create professional business content. 
-            `,
-          },
+    try {
+      const response = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: "You are a helpful assistant that can help users create professional business content." },
+          { role: "user", content: `Turn the following text into a professional business mail: ${this.state.startText}` },
         ],
-      },
-      {
-        role: "user",
-        content: [
-          {
-            type: "text",
-            text: "Turn the following text into a professional business mail: " + this.state.startText,
-          },
-        ],
-      },
-    ];
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages: messages,
-    });
-    current.setState({ isLoading: false });
-    current.setState({ generatedText: response.choices[0].message["content"] });
+        max_tokens: 150,
+      });
+      this.setState({ generatedText: response.choices[0]?.message?.content || "", isLoading: false });
+    } catch (error) {
+      console.error("OpenAI API Error:", error);
+      this.setState({ isLoading: false });
+    }
   };
 
   insertIntoMail = () => {
-    const finalText = this.state.finalMailText.length === 0 ? this.state.generatedText : this.state.finalMailText;
-    Office.context.mailbox.item.body.setSelectedDataAsync(finalText, {
-      coercionType: Office.CoercionType.Text,
-    });
+    const finalText = this.state.finalMailText || this.state.generatedText;
+    Office.context.mailbox.item.body.setSelectedDataAsync(finalText, { coercionType: Office.CoercionType.Text });
   };
 
   onSummarize = async () => {
     try {
       this.setState({ isLoading: true });
       const summary = await this.summarizeMail();
-      this.setState({ summary: summary, isLoading: false });
+      this.setState({ summary, isLoading: false });
     } catch (error) {
-      this.setState({ summary: error, isLoading: false });
+      console.error("Summarize Error:", error);
+      this.setState({ summary: `Error: ${error.message || error}`, isLoading: false });
     }
   };
 
-  summarizeMail(): Promise<any> {
-    return new Office.Promise(function (resolve, reject) {
-      try {
-        Office.context.mailbox.item.body.getAsync(Office.CoercionType.Text, async function (asyncResult) {
-          const openai = new OpenAI({
-            apiKey: process.env.OPENAI_API_KEY,
-          });
+  summarizeMail = (): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      Office.context.mailbox.item.body.getAsync(Office.CoercionType.Text, async (asyncResult) => {
+        if (asyncResult.status === Office.AsyncResultStatus.Failed) {
+          return reject(new Error("Failed to retrieve email body."));
+        }
 
-          //take only the first 800 words of the mail
+        try {
+          const openai = new OpenAI({ 
+            apiKey: process.env.OPENAI_API_KEY,
+            dangerouslyAllowBrowser: true
+          });
           const mailText = asyncResult.value.split(" ").slice(0, 800).join(" ");
 
-          //create the request body
-          const messages: ChatCompletionMessageParam[] = [
-            {
-              role: "system",
-              content: [
-                {
-                  type: "text",
-                  text: `
-                    You are a helpful assistant that can help users to better manage emails. The mail thread can be made by multiple prompts. 
-                  `,
-                },
-              ],
-            },
-            {
-              role: "user",
-              content: [
-                {
-                  type: "text",
-                  text: "Summarize the following mail thread and summarize it with a bullet list: " + mailText,
-                },
-              ],
-            },
-          ];
-
           const response = await openai.chat.completions.create({
-            model: "gpt-4o",
-            messages: messages,
+            model: "gpt-4o-mini",
+            messages: [
+              { role: "system", content: "You are a helpful assistant to help users better manage emails." },
+              { role: "user", content: `Summarize the following mail thread into a bullet list: ${mailText}` },
+            ],
+            max_tokens: 150,
           });
 
-          resolve(response.choices[0].message["content"]);
-        });
-      } catch (error) {
-        reject(error);
-      }
+          resolve(response.choices[0]?.message?.content || "No summary available.");
+        } catch (error) {
+          reject(new Error(`OpenAI API Error: ${error.message || error}`));
+        }
+      });
     });
-  }
-
-  ProgressSection = () => {
-    if (this.state.isLoading) {
-      return <Progress title="Loading..." message="The AI is working..." />;
-    } else {
-      return <> </>;
-    }
   };
 
   BusinessMailSection = () => {
-    if (this.state.isGenerateBusinessMailActive) {
-      return (
-        <>
-          <p>Briefly describe what you want to communicate in the mail:</p>
-          <textarea
-            className="ms-welcome"
-            onChange={(e) => this.setState({ startText: e.target.value })}
-            rows={5}
-            cols={40}
-          />
-          <p>
-            <DefaultButton
-              className="ms-welcome__action"
-              iconProps={{ iconName: "ChevronRight" }}
-              onClick={this.generateText}
-            >
-              Generate text
-            </DefaultButton>
-          </p>
-          <this.ProgressSection />
-          <textarea
-            className="ms-welcome"
-            defaultValue={this.state.generatedText}
-            onChange={(e) => this.setState({ finalMailText: e.target.value })}
-            rows={15}
-            cols={40}
-          />
-          <p>
-            <DefaultButton
-              className="ms-welcome__action"
-              iconProps={{ iconName: "ChevronRight" }}
-              onClick={this.insertIntoMail}
-            >
-              Insert into mail
-            </DefaultButton>
-          </p>
-        </>
-      );
-    } else {
-      return <div> </div>;
-    }
+    if (!this.state.isGenerateBusinessMailActive) return null;
+
+    return (
+      <>
+        <p>Briefly describe what you want to communicate in the mail:</p>
+        <this.TextArea
+          value={this.state.startText}
+          onChange={(e) => this.setState({ startText: e.target.value })}
+          rows={5}
+          cols={40}
+        />
+        <DefaultButton
+          className="ms-welcome__action"
+          iconProps={{ iconName: "ChevronRight" }}
+          onClick={this.generateText}
+        >
+          Generate text
+        </DefaultButton>
+        <this.ProgressSection />
+        <this.TextArea
+          value={this.state.generatedText}
+          onChange={(e) => this.setState({ finalMailText: e.target.value })}
+          rows={15}
+          cols={40}
+        />
+        <DefaultButton
+          className="ms-welcome__action"
+          iconProps={{ iconName: "ChevronRight" }}
+          onClick={this.insertIntoMail}
+        >
+          Insert into mail
+        </DefaultButton>
+      </>
+    );
   };
 
   SummarizeMailSection = () => {
-    if (this.state.isSummarizeMailActive) {
-      return (
-        <>
-          <p>Summarize mail</p>
-          <DefaultButton
-            className="ms-welcome__action"
-            iconProps={{ iconName: "ChevronRight" }}
-            onClick={this.onSummarize}
-          >
-            Summarize mail
-          </DefaultButton>
-          <this.ProgressSection />
-          <textarea className="ms-welcome" defaultValue={this.state.summary} rows={15} cols={40} />
-        </>
-      );
-    } else {
-      return <div> </div>;
-    }
+    if (!this.state.isSummarizeMailActive) return null;
+
+    return (
+      <>
+        <p>Summarize mail</p>
+        <DefaultButton
+          className="ms-welcome__action"
+          iconProps={{ iconName: "ChevronRight" }}
+          onClick={this.onSummarize}
+        >
+          Summarize
+        </DefaultButton>
+        <this.ProgressSection />
+        <this.TextArea
+          value={this.state.summary}
+          onChange={() => {}}
+          rows={15}
+          cols={40}
+        />
+      </>
+    );
   };
 
   render() {
@@ -248,7 +204,7 @@ export default class App extends React.Component<AppProps, AppState> {
         <Progress
           title={title}
           logo={require("./../../../assets/logo-filled.png")}
-          message="Please sideload your addin to see app body."
+          message="Please sideload your add-in to see the app body."
         />
       );
     }
@@ -256,37 +212,20 @@ export default class App extends React.Component<AppProps, AppState> {
     return (
       <div className="ms-welcome">
         <main className="ms-welcome__main">
-          <h2 className="ms-font-xl ms-fontWeight-semilight ms-fontColor-neutralPrimary ms-u-slideUpIn20">
-            Outlook AI Assistant
-          </h2>
-
-          <p className="ms-font-l ms-fontWeight-semilight ms-fontColor-neutralPrimary ms-u-slideUpIn20">
-            Choose your service:
-          </p>
-          <p>
-            <DefaultButton
-              className="ms-welcome__action"
-              iconProps={{ iconName: "ChevronRight" }}
-              onClick={this.showGenerateBusinessMail}
-            >
-              Generate business mail
-            </DefaultButton>
-          </p>
-          <p>
-            <DefaultButton
-              className="ms-welcome__action"
-              iconProps={{ iconName: "ChevronRight" }}
-              onClick={this.showSummarizeMail}
-            >
-              Summarize mail
-            </DefaultButton>
-          </p>
-          <div>
-            <this.BusinessMailSection />
-          </div>
-          <div>
-            <this.SummarizeMailSection />
-          </div>
+          <h2>Outlook AI Assistant</h2>
+          <p>Choose your service:</p>
+          <DefaultButton
+            className="ms-welcome__action"
+            iconProps={{ iconName: "ChevronRight" }}
+            onClick={this.showSummarizeMail}
+          >Summarize it!</DefaultButton>
+          <this.BusinessMailSection />
+          <this.SummarizeMailSection />
+          <DefaultButton
+            className="ms-welcome__action"
+            iconProps={{ iconName: "ChevronRight" }}
+            onClick={this.showGenerateBusinessMail}
+          >Reply it!</DefaultButton>
         </main>
       </div>
     );

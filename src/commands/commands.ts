@@ -1,3 +1,5 @@
+/* eslint-disable no-undef */
+/* eslint-disable prettier/prettier */
 /*
  * Copyright (c) Microsoft Corporation. All rights reserved. Licensed under the MIT license.
  * See LICENSE in the project root for license information.
@@ -26,34 +28,27 @@ function getSelectedText(): Promise<any> {
   return new Office.Promise(function (resolve, reject) {
     try {
       Office.context.mailbox.item.body.getAsync(Office.CoercionType.Text, async function (asyncResult) {
-        const openai = new OpenAI({
+        const openai = new OpenAI({ 
           apiKey: process.env.OPENAI_API_KEY,
-        });
-        const response = await openai.chat.completions.create({
-          model: "gpt-4o",
-          messages: [
-            {
-              role: "system",
-              content: [
-                {
-                  type: "text",
-                  text: `You are a helpful assistant that can help users to better manage emails. The following prompt contains the whole mail thread.`
-                },
-              ],
-            },
-            {
-              role: "user",
-              content: [
-                {
-                  type: "text",
-                  text: "Summarize the following mail thread and extract the key points: " + asyncResult.value,
-                },
-              ],
-            },
-          ],
+          dangerouslyAllowBrowser: true
         });
 
-        resolve(response.choices[0].message["content"]);
+        const response = await openai.chat.completions.create({
+        messages: [
+          { 
+            role: "system", 
+            content: "You are a helpful assistant that can help users to better manage emails. The following prompt contains the whole mail thread." 
+          },
+          { 
+            role: "user", 
+            content: `Summarize the following mail thread and extract the key points: ${asyncResult.value}` 
+          }
+        ],
+        model: "gpt-4o-mini",
+        max_tokens: 150
+      });
+
+        resolve(response.choices[0]?.message?.content);
       });
     } catch (error) {
       reject(error);
